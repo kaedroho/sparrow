@@ -3,7 +3,7 @@ use std::io::{self, BufRead};
 use std::path::Path;
 use std::collections::HashMap;
 
-use sparrow::{Database, tokenize_string, tokens_to_tsvector, DocumentSource};
+use sparrow::{Database, tokenize::tokenize_string, tsvector::TSVector, DocumentSource};
 
 #[derive(Debug, serde_derive::Deserialize)]
 struct Document {
@@ -19,8 +19,8 @@ fn main() {
         for line in lines {
             if let Ok(line) = line {
                 if let Ok(doc) = serde_json::from_str::<Document>(&line) {
-                    let title = tokens_to_tsvector(&tokenize_string(&doc.title), &mut db.dictionary);
-                    let summary = tokens_to_tsvector(&tokenize_string(&doc.summary), &mut db.dictionary);
+                    let title = TSVector::from_tokens(&tokenize_string(&doc.title), &mut db.dictionary);
+                    let summary = TSVector::from_tokens(&tokenize_string(&doc.summary), &mut db.dictionary);
 
                     let mut fields = HashMap::new();
                     fields.insert("all_text".to_owned(), &title + &summary);

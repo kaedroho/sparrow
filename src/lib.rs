@@ -1,6 +1,12 @@
+pub mod tsvector;
+pub mod tokenize;
+pub mod term_dictionary;
+
 use std::collections::hash_map::HashMap;
-use std::ops::Add;
 use fnv::FnvHashMap;
+
+use tsvector::TSVector;
+use term_dictionary::TermDictionary;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize)]
 pub struct DocumentId(u32);
@@ -8,87 +14,9 @@ pub struct DocumentId(u32);
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize)]
 pub struct TermId(u32);
 
-#[derive(Debug, Clone)]
-pub struct TSVectorTerm {
-    pub positions: Vec<usize>,
-    pub weight: f32,
-}
-
-impl Default for TSVectorTerm {
-    fn default() -> TSVectorTerm {
-        TSVectorTerm {
-            positions: Vec::new(),
-            weight: 0.0,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct TSVector {
-    pub length: usize,
-    pub terms: FnvHashMap<TermId, TSVectorTerm>,
-}
-
-impl Add<&TSVector> for &TSVector {
-    type Output = TSVector;
-
-    fn add(self, other: &TSVector) -> TSVector {
-        let mut terms = FnvHashMap::default();
-
-        fn add_terms(terms: &mut FnvHashMap<TermId, TSVectorTerm>, terms_to_add: &FnvHashMap<TermId, TSVectorTerm>, start_position: usize) {
-            for (term, other_term_info) in terms_to_add {
-                if let Some(mut term_info) = terms.get_mut(term) {
-                    for position in &other_term_info.positions {
-                        term_info.positions.push(start_position + position);
-                    }
-                    term_info.weight += other_term_info.weight;
-                } else {
-                    terms.insert(*term, other_term_info.clone());
-                }
-            }
-        }
-
-        add_terms(&mut terms, &self.terms, 0);
-        add_terms(&mut terms, &other.terms, self.length);
-
-        TSVector {
-            length: self.length + other.length,
-            terms,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Token {
-    pub term: String,
-    pub position: usize,
-    pub weight: f32,
-}
-
 #[derive(Debug)]
 pub struct DocumentSource {
     pub fields: HashMap<String, TSVector>,
-}
-
-#[derive(Debug, Default, serde_derive::Serialize)]
-pub struct TermDictionary {
-    next_id: u32,
-    pub terms: HashMap<String, TermId>,
-    pub term_ids: FnvHashMap<TermId, String>,
-}
-
-impl TermDictionary {
-    pub fn get_or_insert(&mut self, term: &str) -> TermId {
-        if let Some(term_id) = self.terms.get(term) {
-            term_id.clone()
-        } else {
-            let id = TermId(self.next_id);
-            self.next_id += 1;
-            self.terms.insert(term.to_owned(), id);
-            self.term_ids.insert(id, term.to_owned());
-            id
-        }
-    }
 }
 
 #[derive(Debug, Default, serde_derive::Serialize)]
@@ -145,47 +73,18 @@ impl Database {
     }
 }
 
-pub fn tokenize_string(string: &str) -> Vec<Token> {
-    let mut current_position = 0;
-    string.split_whitespace().map(|string| {
-        current_position += 1;
-        Token { term: string.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase(), weight: 1.0, position: current_position }
-    }).filter(|token| token.term.len() < 100).collect()
-}
-
-pub fn tokens_to_tsvector(tokens: &Vec<Token>, dict: &mut TermDictionary) -> TSVector {
-    let mut terms: FnvHashMap<TermId, TSVectorTerm> = FnvHashMap::default();
-
-    for token in tokens {
-        let term = dict.get_or_insert(&token.term);
-        let mut term_entry = terms.entry(term).or_default();
-
-        term_entry.positions.push(token.position);
-        term_entry.weight += token.weight;
-    }
-
-    let field_length = tokens.len() as f32;
-
-    for (_, term) in &mut terms.iter_mut() {
-        term.weight = (term.weight + 1.0).log2();
-
-        // Divide weights by field length
-        term.weight /= field_length;
-    }
-
-    return TSVector { terms, length: tokens.len() };
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use super::{tokenize_string, tokens_to_tsvector, Database, DocumentSource};
+    use super::tsvector::TSVector;
+    use super::tokenize::tokenize_string;
+    use super::{Database, DocumentSource};
 
     #[test]
     fn it_works() {
         let mut db = Database::default();
         let tokens = tokenize_string("hello world this is a test hello");
-        let tsvector = tokens_to_tsvector(&tokens, &mut db.dictionary);
+        let tsvector = TSVector::from_tokens(&tokens, &mut db.dictionary);
         dbg!(tokens);
         dbg!(&tsvector);
 
