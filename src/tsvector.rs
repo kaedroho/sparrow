@@ -1,8 +1,7 @@
 use std::ops::Add;
 use fnv::FnvHashMap;
 
-use super::TermId;
-use super::tokenize::Token;
+use super::{TermId, Token};
 use super::term_dictionary::TermDictionary;
 
 #[derive(Debug, Clone)]
@@ -20,7 +19,7 @@ impl Default for TSVectorTerm {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TSVector {
     pub length: usize,
     pub terms: FnvHashMap<TermId, TSVectorTerm>,
@@ -78,27 +77,4 @@ impl Add<&TSVector> for &TSVector {
             terms,
         }
     }
-}
-
-pub fn tokens_to_tsvector(tokens: &Vec<Token>, dict: &mut TermDictionary) -> TSVector {
-    let mut terms: FnvHashMap<TermId, TSVectorTerm> = FnvHashMap::default();
-
-    for token in tokens {
-        let term = dict.get_or_insert(&token.term);
-        let mut term_entry = terms.entry(term).or_default();
-
-        term_entry.positions.push(token.position);
-        term_entry.weight += token.weight;
-    }
-
-    let field_length = tokens.len() as f32;
-
-    for (_, term) in &mut terms.iter_mut() {
-        term.weight = (term.weight + 1.0).log2();
-
-        // Divide weights by field length
-        term.weight /= field_length;
-    }
-
-    return TSVector { terms, length: tokens.len() };
 }

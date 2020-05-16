@@ -1,5 +1,4 @@
 pub mod tsvector;
-pub mod tokenize;
 pub mod term_dictionary;
 
 use std::collections::hash_map::HashMap;
@@ -9,17 +8,48 @@ use tsvector::TSVector;
 use term_dictionary::TermDictionary;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize)]
+#[serde(transparent)]
 pub struct DocumentId(u32);
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize, serde_derive::Deserialize)]
+#[serde(transparent)]
 pub struct TermId(u32);
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
+pub struct Token {
+    pub term: String,
+    pub position: usize,
+    #[serde(default = "default_token_weight")]
+    pub weight: f32,
+}
+
+fn default_token_weight() -> f32 {
+    1.0
+}
+
+#[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
 pub struct DocumentSource {
+    pub fields: HashMap<String, Vec<Token>>,
+}
+
+impl DocumentSource {
+    pub fn as_document(&self, term_dict: &mut TermDictionary) -> Document {
+        let mut fields = HashMap::new();
+
+        for (field, tokens) in &self.fields {
+            fields.insert(field.to_owned(), TSVector::from_tokens(tokens, term_dict));
+        }
+
+        Document { fields }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Document {
     pub fields: HashMap<String, TSVector>,
 }
 
-#[derive(Debug, Default, serde_derive::Serialize)]
+#[derive(Debug, Default)]
 pub struct InvertedIndex {
     pub postings: FnvHashMap<TermId, Vec<(DocumentId, Vec<usize>, f32)>>,
     pub total_documents: usize,
@@ -27,10 +57,10 @@ pub struct InvertedIndex {
 }
 
 impl InvertedIndex {
-    pub fn insert_tsvector(&mut self, document: DocumentId, tsvector: TSVector) {
-        for (term, term_info) in tsvector.terms {
-            let postings_list = self.postings.entry(term).or_default();
-            postings_list.push((document, term_info.positions, term_info.weight));
+    pub fn insert_tsvector(&mut self, document: DocumentId, tsvector: &TSVector) {
+        for (term, term_info) in &tsvector.terms {
+            let postings_list = self.postings.entry(*term).or_default();
+            postings_list.push((document, term_info.positions.clone(), term_info.weight));
         }
 
         self.total_documents += 1;
@@ -54,21 +84,25 @@ impl InvertedIndex {
     }
 }
 
-#[derive(Debug, Default, serde_derive::Serialize)]
+#[derive(Debug, Default)]
 pub struct Database {
     next_document_id: u32,
     pub dictionary: TermDictionary,
     pub fields: HashMap<String, InvertedIndex>,
+    pub docs: HashMap<DocumentId, Document>,
 }
 
 impl Database {
     pub fn insert_document(&mut self, source: DocumentSource) -> DocumentId {
+        let doc = source.as_document(&mut self.dictionary);
+
         let id = DocumentId(self.next_document_id);
         self.next_document_id += 1;
-        for (field_name, tsvector) in source.fields {
+        for (field_name, tsvector) in &doc.fields {
             let field = self.fields.entry(field_name.to_owned()).or_default();
             field.insert_tsvector(id, tsvector);
         }
+        self.docs.insert(id, doc);
         id
     }
 }
@@ -76,20 +110,21 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use super::tsvector::TSVector;
-    use super::tokenize::tokenize_string;
-    use super::{Database, DocumentSource};
+    use super::{Database, DocumentSource, Token};
+
+    pub fn tokenize_string(string: &str) -> Vec<Token> {
+        let mut current_position = 0;
+        string.split_whitespace().map(|string| {
+            current_position += 1;
+            Token { term: string.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase(), weight: 1.0, position: current_position }
+        }).filter(|token| token.term.len() < 100).collect()
+    }
 
     #[test]
     fn it_works() {
         let mut db = Database::default();
-        let tokens = tokenize_string("hello world this is a test hello");
-        let tsvector = TSVector::from_tokens(&tokens, &mut db.dictionary);
-        dbg!(tokens);
-        dbg!(&tsvector);
-
         let mut fields = HashMap::new();
-        fields.insert("title".to_owned(), tsvector);
+        fields.insert("title".to_owned(), tokenize_string("hello world this is a test hello"));
         db.insert_document(DocumentSource { fields });
     }
 }
