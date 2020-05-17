@@ -5,8 +5,31 @@ use fnv::FnvHashMap;
 #[serde(transparent)]
 pub struct FieldId(u32);
 
-#[derive(Debug, Default, serde_derive::Serialize)]
+#[derive(Debug, Clone, serde_derive::Serialize)]
 pub struct FieldConfig {
+    pub boost: f32,
+}
+
+impl FieldConfig {
+    pub fn set_boost(&self, boost: f32) -> FieldConfig {
+        let mut new = self.clone();
+        new.boost = boost;
+        new
+    }
+
+    pub fn add_boost(&self, boost: f32) -> FieldConfig {
+        let mut new = self.clone();
+        new.boost *= boost;
+        new
+    }
+}
+
+impl Default for FieldConfig {
+    fn default() -> FieldConfig {
+        FieldConfig {
+            boost: 1.0,
+        }
+    }
 }
 
 #[derive(Debug, Default, serde_derive::Serialize)]

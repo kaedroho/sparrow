@@ -14,7 +14,7 @@ struct Document {
 
 fn main() {
     let mut db = Database::default();
-    let title_field = db.data_dictionary.insert("title".to_owned(), FieldConfig::default());
+    let title_field = db.data_dictionary.insert("title".to_owned(), FieldConfig::default().set_boost(2.0));
     db.data_dictionary.insert("summary".to_owned(), FieldConfig::default());
 
     let mut sources = HashMap::new();
@@ -38,7 +38,7 @@ fn main() {
         }
     }
 
-    let mut documents = db.fields.get(&title_field).unwrap().search(db.term_dictionary.get_or_insert("test"));
+    let mut documents = db.fields.get(&title_field).unwrap().search(db.term_dictionary.get_or_insert("nffs"));
 
     documents.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap().reverse());
 
@@ -60,6 +60,6 @@ pub fn tokenize_string(string: &str) -> Vec<Token> {
     let mut current_position = 0;
     string.split_whitespace().map(|string| {
         current_position += 1;
-        Token { term: string.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase(), weight: 1.0, position: current_position }
+        Token { term: string.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase(), position: current_position }
     }).filter(|token| token.term.len() < 100).collect()
 }

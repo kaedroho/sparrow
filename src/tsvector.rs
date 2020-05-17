@@ -31,22 +31,18 @@ impl TSVector {
 
         for token in tokens {
             let term = dict.get_or_insert(&token.term);
-            let mut term_entry = terms.entry(term).or_default();
-
+            let term_entry = terms.entry(term).or_default();
             term_entry.positions.push(token.position);
-            term_entry.weight += token.weight;
-        }
-
-        let field_length = tokens.len() as f32;
-
-        for (_, term) in &mut terms.iter_mut() {
-            term.weight = (term.weight + 1.0).log2();
-
-            // Divide weights by field length
-            term.weight /= field_length;
+            term_entry.weight += 1.0;
         }
 
         TSVector { terms, length: tokens.len() }
+    }
+
+    pub fn boost(&mut self, boost: f32) {
+        for term in self.terms.values_mut() {
+            term.weight *= boost;
+        }
     }
 }
 

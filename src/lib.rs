@@ -17,12 +17,6 @@ pub struct DocumentId(u32);
 pub struct Token {
     pub term: String,
     pub position: usize,
-    #[serde(default = "default_token_weight")]
-    pub weight: f32,
-}
-
-fn default_token_weight() -> f32 {
-    1.0
 }
 
 #[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
@@ -35,8 +29,12 @@ impl DocumentSource {
         let mut fields = FnvHashMap::default();
 
         for (field, tokens) in &self.fields {
-            if let Some(field_id) = data_dict.field_names.get(field) {
-                fields.insert(*field_id, TSVector::from_tokens(tokens, term_dict));
+            if let Some((field_id, field_config)) = data_dict.get_by_name(field) {
+                let mut tsvector = TSVector::from_tokens(tokens, term_dict);
+                // Apply field boost and document length normalisation
+                // Note: we multiply the weight by the average field length at query time
+                tsvector.boost(field_config.boost / tsvector.length as f32);
+                fields.insert(field_id, tsvector);
             }
         }
 
@@ -117,7 +115,7 @@ mod tests {
         let mut current_position = 0;
         string.split_whitespace().map(|string| {
             current_position += 1;
-            Token { term: string.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase(), weight: 1.0, position: current_position }
+            Token { term: string.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase(), position: current_position }
         }).filter(|token| token.term.len() < 100).collect()
     }
 
