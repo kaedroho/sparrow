@@ -111,6 +111,7 @@ pub enum Query {
     Or(Vec<Query>),
     And(Vec<Query>),
     Filter(Box<Query>, Box<Query>),
+    Boost(Box<Query>, f32),
 }
 
 #[derive(Debug, Default)]
@@ -170,6 +171,9 @@ impl Database {
             }
             Query::Filter(query, filter) => {
                 self.simple_match(&Query::And(vec![*query.clone(), *filter.clone()]))
+            }
+            Query::Boost(query, _boost) => {
+                self.simple_match(&query)
             }
         }
     }
@@ -235,6 +239,13 @@ impl Database {
                 }
 
                 results.into_iter().filter(|(_, result)| result.passed_filter).map(|(document_id, result)| (document_id, result.score)).collect()
+            }
+            Query::Boost(query, boost) => {
+                if *boost == 0.0 {
+                    self.simple_match(&query).into_iter().map(|document_id| (document_id, 0.0)).collect()
+                } else {
+                    self.query(&query).into_iter().map(|(document_id, score)| (document_id, score * boost)).collect()
+                }
             }
         }
     }
