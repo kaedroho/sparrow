@@ -19,7 +19,7 @@ impl Default for TSVectorTerm {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TSVector {
     pub length: usize,
     pub terms: FnvHashMap<TermId, TSVectorTerm>,
@@ -44,33 +44,29 @@ impl TSVector {
             term.weight *= boost;
         }
     }
+
+    pub fn append(&mut self, other: &TSVector) {
+        for (term, other_term_info) in &other.terms {
+            if let Some(mut term_info) = self.terms.get_mut(term) {
+                for position in &other_term_info.positions {
+                    term_info.positions.push(self.length + position);
+                }
+                term_info.weight += other_term_info.weight;
+            } else {
+                self.terms.insert(*term, other_term_info.clone());
+            }
+        }
+
+        self.length += other.length;
+    }
 }
 
 impl Add<&TSVector> for &TSVector {
     type Output = TSVector;
 
     fn add(self, other: &TSVector) -> TSVector {
-        let mut terms = FnvHashMap::default();
-
-        fn add_terms(terms: &mut FnvHashMap<TermId, TSVectorTerm>, terms_to_add: &FnvHashMap<TermId, TSVectorTerm>, start_position: usize) {
-            for (term, other_term_info) in terms_to_add {
-                if let Some(mut term_info) = terms.get_mut(term) {
-                    for position in &other_term_info.positions {
-                        term_info.positions.push(start_position + position);
-                    }
-                    term_info.weight += other_term_info.weight;
-                } else {
-                    terms.insert(*term, other_term_info.clone());
-                }
-            }
-        }
-
-        add_terms(&mut terms, &self.terms, 0);
-        add_terms(&mut terms, &other.terms, self.length);
-
-        TSVector {
-            length: self.length + other.length,
-            terms,
-        }
+        let mut new = self.clone();
+        new.append(other);
+        new
     }
 }

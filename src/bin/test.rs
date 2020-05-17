@@ -14,8 +14,9 @@ struct Document {
 
 fn main() {
     let mut db = Database::default();
-    let title_field = db.data_dictionary.insert("title".to_owned(), FieldConfig::default().set_boost(2.0));
-    db.data_dictionary.insert("summary".to_owned(), FieldConfig::default());
+    let all_text_field = db.data_dictionary.insert("all_text".to_owned(), FieldConfig::default());
+    db.data_dictionary.insert("title".to_owned(), FieldConfig::default().boost(2.0).copy_to(all_text_field));
+    db.data_dictionary.insert("summary".to_owned(), FieldConfig::default().copy_to(all_text_field));
 
     let mut sources = HashMap::new();
 
@@ -32,13 +33,13 @@ fn main() {
 
                     let doc_source = DocumentSource { fields };
                     let id = db.insert_document(doc_source.clone());
-                    sources.insert(id, doc_source);
+                    sources.insert(id, doc.title);
                 }
             }
         }
     }
 
-    let mut documents = db.fields.get(&title_field).unwrap().search(db.term_dictionary.get_or_insert("nffs"));
+    let mut documents = db.fields.get(&all_text_field).unwrap().search(db.term_dictionary.get_or_insert("nffs"));
 
     documents.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap().reverse());
 

@@ -1,5 +1,5 @@
 use std::collections::hash_map::HashMap;
-use fnv::FnvHashMap;
+use fnv::{FnvHashMap, FnvHashSet};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize, serde_derive::Deserialize)]
 #[serde(transparent)]
@@ -8,18 +8,19 @@ pub struct FieldId(u32);
 #[derive(Debug, Clone, serde_derive::Serialize)]
 pub struct FieldConfig {
     pub boost: f32,
+    pub copy_to: FnvHashSet<FieldId>,
 }
 
 impl FieldConfig {
-    pub fn set_boost(&self, boost: f32) -> FieldConfig {
+    pub fn boost(&self, boost: f32) -> FieldConfig {
         let mut new = self.clone();
-        new.boost = boost;
+        new.boost *= boost;
         new
     }
 
-    pub fn add_boost(&self, boost: f32) -> FieldConfig {
+    pub fn copy_to(&self, other: FieldId) -> FieldConfig {
         let mut new = self.clone();
-        new.boost *= boost;
+        new.copy_to.insert(other);
         new
     }
 }
@@ -28,6 +29,7 @@ impl Default for FieldConfig {
     fn default() -> FieldConfig {
         FieldConfig {
             boost: 1.0,
+            copy_to: FnvHashSet::default(),
         }
     }
 }

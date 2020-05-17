@@ -27,6 +27,7 @@ pub struct DocumentSource {
 impl DocumentSource {
     pub fn as_document(&self, term_dict: &mut TermDictionary, data_dict: &DataDictionary) -> Document {
         let mut fields = FnvHashMap::default();
+        let mut copy_fields = FnvHashMap::default();
 
         for (field, tokens) in &self.fields {
             if let Some((field_id, field_config)) = data_dict.get_by_name(field) {
@@ -35,6 +36,23 @@ impl DocumentSource {
                 // Note: we multiply the weight by the average field length at query time
                 tsvector.boost(field_config.boost / tsvector.length as f32);
                 fields.insert(field_id, tsvector);
+
+                if !field_config.copy_to.is_empty() {
+                    copy_fields.insert(field_id, field_config.copy_to.clone());
+                }
+            }
+        }
+
+        for (source_field, destination_fields) in copy_fields {
+            if let Some(source) = fields.get(&source_field) {
+                // Work around borrow checker
+                // FIXME: Make this faster
+                let source = source.clone();
+
+                for destination_field in destination_fields {
+                    let destination = fields.entry(destination_field).or_default();
+                    destination.append(&source);
+                }
             }
         }
 
