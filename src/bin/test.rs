@@ -3,7 +3,7 @@ use std::io::{self, BufRead};
 use std::path::Path;
 use std::collections::HashMap;
 
-use sparrow::{Database, Token, DocumentSource};
+use sparrow::{Database, Token, DocumentSource, Query};
 use sparrow::data_dictionary::FieldConfig;
 
 #[derive(Debug, serde_derive::Deserialize)]
@@ -39,7 +39,9 @@ fn main() {
         }
     }
 
-    let mut documents = db.fields.get(&all_text_field).unwrap().search(db.term_dictionary.get_or_insert("nffs"));
+    let query = Query::Term(all_text_field, db.term_dictionary.get_or_insert("nffs"));
+
+    let mut documents = db.query(&query);
 
     documents.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap().reverse());
 
@@ -55,7 +57,6 @@ where P: AsRef<Path>, {
     let file = File::open(filename)?;
     Ok(io::BufReader::new(file).lines())
 }
-
 
 pub fn tokenize_string(string: &str) -> Vec<Token> {
     let mut current_position = 0;

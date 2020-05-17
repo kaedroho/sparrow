@@ -100,6 +100,15 @@ impl InvertedIndex {
     }
 }
 
+#[derive(Debug, serde_derive::Serialize, serde_derive::Deserialize)]
+pub enum Query {
+    Term(FieldId, TermId),
+    //Phrase(FieldId, Vec<TermId>),
+    //Or(Vec<Query>),
+    //And(Vec<Query>),
+    //Filter(Box<Query>, Box<Query>),
+}
+
 #[derive(Debug, Default)]
 pub struct Database {
     next_document_id: u32,
@@ -121,6 +130,18 @@ impl Database {
         }
         self.docs.insert(id, doc);
         id
+    }
+
+    pub fn query(&self, query: &Query) -> Vec<(DocumentId, f32)> {
+        match query {
+            Query::Term(field_id, term_id) => {
+                if let Some(field) = self.fields.get(field_id) {
+                    field.search(*term_id)
+                } else {
+                    Vec::new()
+                }
+            }
+        }
     }
 }
 
