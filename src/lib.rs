@@ -106,7 +106,7 @@ pub enum Query {
     //Phrase(FieldId, Vec<TermId>),
     Or(Vec<Query>),
     And(Vec<Query>),
-    //Filter(Box<Query>, Box<Query>),
+    Filter(Box<Query>, Box<Query>),
 }
 
 #[derive(Debug, Default)]
@@ -170,6 +170,29 @@ impl Database {
                 }
 
                 results.into_iter().filter(|(_, result)| result.query_count == queries.len()).map(|(document_id, result)| (document_id, result.score)).collect()
+            }
+            Query::Filter(query, filter) => {
+                #[derive(Default)]
+                struct Result {
+                    score: f32,
+                    passed_filter: bool,
+                }
+
+                let mut results: FnvHashMap<DocumentId, Result> = FnvHashMap::default();
+
+                for (document_id, score) in self.query(&query) {
+                    let result = results.entry(document_id).or_default();
+                    result.score += score;
+                }
+
+
+                for (document_id, _) in self.query(&filter) {
+                    if let Some(result) = results.get_mut(&document_id) {
+                        result.passed_filter = true;
+                    }
+                }
+
+                results.into_iter().filter(|(_, result)| result.passed_filter).map(|(document_id, result)| (document_id, result.score)).collect()
             }
         }
     }
