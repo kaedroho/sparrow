@@ -3,7 +3,7 @@ pub mod term_dictionary;
 pub mod data_dictionary;
 
 use std::collections::hash_map::HashMap;
-use fnv::FnvHashMap;
+use fnv::{FnvHashMap, FnvHashSet};
 
 use tsvector::TSVector;
 use term_dictionary::{TermId, TermDictionary};
@@ -91,6 +91,10 @@ impl InvertedIndex {
         self.postings.get(&term).map(|postings_list| postings_list.iter().map(|posting| posting.1.len()).sum()).unwrap_or(0)
     }
 
+    pub fn docs_with_term(&self, term: TermId) -> Vec<DocumentId> {
+        self.postings.get(&term).map(|postings_list| postings_list.iter().map(|posting| posting.0).collect()).unwrap_or_default()
+    }
+
     pub fn search(&self, term: TermId) -> Vec<(DocumentId, f32)> {
         let inverse_document_frequency = 1.0 / (self.term_document_frequency(term) as f32 + 1.0).log2();
         let field_length_normalizer = 1.0 / (self.total_documents as f32 / self.total_terms as f32);
@@ -100,7 +104,7 @@ impl InvertedIndex {
     }
 }
 
-#[derive(Debug, serde_derive::Serialize, serde_derive::Deserialize)]
+#[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
 pub enum Query {
     Term(FieldId, TermId),
     //Phrase(FieldId, Vec<TermId>),
@@ -130,6 +134,44 @@ impl Database {
         }
         self.docs.insert(id, doc);
         id
+    }
+
+    pub fn simple_match(&self, query: &Query) -> Vec<DocumentId> {
+        match query {
+            Query::Term(field_id, term_id) => {
+                if let Some(field) = self.fields.get(field_id) {
+                    field.docs_with_term(*term_id)
+                } else {
+                    Vec::new()
+                }
+            }
+            Query::Or(queries) => {
+                let mut results: FnvHashSet<DocumentId> = FnvHashSet::default();
+
+                for query in queries {
+                    for document_id in self.simple_match(&query) {
+                        results.insert(document_id);
+                    }
+                }
+
+                results.into_iter().collect()
+            }
+            Query::And(queries) => {
+                let mut results: FnvHashMap<DocumentId, usize> = FnvHashMap::default();
+
+                for query in queries {
+                    for document_id in self.simple_match(&query) {
+                        let result = results.entry(document_id).or_default();
+                        *result += 1;
+                    }
+                }
+
+                results.into_iter().filter(|(_, result)| *result == queries.len()).map(|(document_id, _)| document_id).collect()
+            }
+            Query::Filter(query, filter) => {
+                self.simple_match(&Query::And(vec![*query.clone(), *filter.clone()]))
+            }
+        }
     }
 
     pub fn query(&self, query: &Query) -> Vec<(DocumentId, f32)> {
@@ -186,7 +228,7 @@ impl Database {
                 }
 
 
-                for (document_id, _) in self.query(&filter) {
+                for document_id in self.simple_match(&filter) {
                     if let Some(result) = results.get_mut(&document_id) {
                         result.passed_filter = true;
                     }
