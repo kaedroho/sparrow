@@ -3,6 +3,7 @@ pub mod term_dictionary;
 pub mod data_dictionary;
 
 use std::collections::hash_map::HashMap;
+use std::iter::FromIterator;
 use fnv::{FnvHashMap, FnvHashSet};
 
 use tsvector::TSVector;
@@ -67,7 +68,7 @@ pub struct Document {
 
 #[derive(Debug, Default)]
 pub struct InvertedIndex {
-    pub postings: FnvHashMap<TermId, Vec<(DocumentId, Vec<usize>, f32)>>,
+    pub postings: FnvHashMap<TermId, Vec<(DocumentId, FnvHashSet<usize>, f32)>>,
     pub total_documents: usize,
     pub total_terms: usize,
 }
@@ -76,7 +77,7 @@ impl InvertedIndex {
     pub fn insert_tsvector(&mut self, document: DocumentId, tsvector: &TSVector) {
         for (term, term_info) in &tsvector.terms {
             let postings_list = self.postings.entry(*term).or_default();
-            postings_list.push((document, term_info.positions.clone(), term_info.weight));
+            postings_list.push((document, FnvHashSet::from_iter(term_info.positions.iter().cloned()), term_info.weight));
         }
 
         self.total_documents += 1;
@@ -95,19 +96,88 @@ impl InvertedIndex {
         self.postings.get(&term).map(|postings_list| postings_list.iter().map(|posting| posting.0).collect()).unwrap_or_default()
     }
 
-    pub fn search(&self, term: TermId) -> Vec<(DocumentId, f32)> {
+    pub fn docs_with_phrase(&self, terms: &Vec<TermId>) -> Vec<DocumentId> {
+        // Get posting list for each term. Only continue if all terms have a posting list
+        let posting_lists = match terms.into_iter().map(|term| self.postings.get(term)).collect::<Option<Vec<_>>>() {
+            Some(posting_lists) => posting_lists,
+            None => return Vec::new(),
+        };
+
+        // Initialise results with values from first posting list
+        let first_posting_list = match posting_lists.first() {
+            Some(first_posting_list) => first_posting_list,
+            None => return Vec::new(),
+        };
+        let mut results: FnvHashMap<DocumentId, FnvHashSet<usize>> = first_posting_list.iter().map(|(document_id, positions, _)| (*document_id, positions.clone())).collect();
+
+        // For each subsequent term, check that each document contains the term in the position after the previous one
+        for posting_list in posting_lists.into_iter().skip(1) {
+            let mut seen_docs = FnvHashSet::default();
+            for (document_id, positions, _) in posting_list {
+                if let Some(result) = results.get_mut(document_id) {
+                    seen_docs.insert(document_id);
+                    *result = result.iter().filter(|position| positions.contains(&(*position + 1))).map(|position| position + 1).collect();
+                }
+            }
+
+            // Remove any documents that either didn't contain that term or didn't have any positions that are straight after the previous term
+            results = results.into_iter().filter(|(document_id, positions)| seen_docs.contains(document_id) && !positions.is_empty()).collect();
+        }
+
+        results.into_iter().map(|(document_id, _)| document_id).collect()
+    }
+
+    fn calculate_normalizer(&self, term: TermId) -> f32 {
         let inverse_document_frequency = 1.0 / (self.term_document_frequency(term) as f32 + 1.0).log2();
         let field_length_normalizer = 1.0 / (self.total_documents as f32 / self.total_terms as f32);
-        let normalizer = inverse_document_frequency * field_length_normalizer;
+        inverse_document_frequency * field_length_normalizer
+    }
 
+    pub fn search(&self, term: TermId) -> Vec<(DocumentId, f32)> {
+        let normalizer = self.calculate_normalizer(term);
         self.postings.get(&term).map(|postings_list| postings_list.iter().map(|posting| (posting.0, posting.2 * normalizer)).collect()).unwrap_or_default()
+    }
+
+    pub fn phrase_search(&self, terms: &Vec<TermId>) -> Vec<(DocumentId, f32)> {
+        // Get posting list for each term. Only continue if all terms have a posting list
+        let posting_lists = match terms.into_iter().map(|term| self.postings.get(term).map(|posting_list| (term, posting_list))).collect::<Option<Vec<_>>>() {
+            Some(posting_lists) => posting_lists,
+            None => return Vec::new(),
+        };
+
+        // Initialise results with values from first posting list
+        let first_posting_list = match posting_lists.first() {
+            Some(first_posting_list) => first_posting_list,
+            None => return Vec::new(),
+        };
+        let normalizer = self.calculate_normalizer(*first_posting_list.0);
+        let mut results: FnvHashMap<DocumentId, (FnvHashSet<usize>, f32)> = first_posting_list.1.iter().map(|(document_id, positions, weight)| (*document_id, (positions.clone(), weight * normalizer))).collect();
+
+        // For each subsequent term, check that each document contains the term in the position after the previous one
+        for (term, posting_list) in posting_lists.into_iter().skip(1) {
+            let normalizer = self.calculate_normalizer(*term);
+            let mut seen_docs = FnvHashSet::default();
+
+            for (document_id, positions, weight) in posting_list {
+                if let Some(result) = results.get_mut(document_id) {
+                    seen_docs.insert(document_id);
+                    result.0 = result.0.iter().filter(|position| positions.contains(&(*position + 1))).map(|position| position + 1).collect();
+                    result.1 += weight * normalizer;
+                }
+            }
+
+            // Remove any documents that either didn't contain that term or didn't have any positions that are straight after the previous term
+            results = results.into_iter().filter(|(document_id, (positions, _))| seen_docs.contains(document_id) && !positions.is_empty()).collect()
+        }
+
+        results.into_iter().map(|(document_id, (_, score))| (document_id, score)).collect()
     }
 }
 
 #[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
 pub enum Query {
     Term(FieldId, TermId),
-    //Phrase(FieldId, Vec<TermId>),
+    Phrase(FieldId, Vec<TermId>),
     Or(Vec<Query>),
     And(Vec<Query>),
     Filter(Box<Query>, Box<Query>),
@@ -142,6 +212,13 @@ impl Database {
             Query::Term(field_id, term_id) => {
                 if let Some(field) = self.fields.get(field_id) {
                     field.docs_with_term(*term_id)
+                } else {
+                    Vec::new()
+                }
+            }
+            Query::Phrase(field_id, terms) => {
+                if let Some(field) = self.fields.get(field_id) {
+                    field.docs_with_phrase(terms)
                 } else {
                     Vec::new()
                 }
@@ -183,6 +260,13 @@ impl Database {
             Query::Term(field_id, term_id) => {
                 if let Some(field) = self.fields.get(field_id) {
                     field.search(*term_id)
+                } else {
+                    Vec::new()
+                }
+            }
+            Query::Phrase(field_id, terms) => {
+                if let Some(field) = self.fields.get(field_id) {
+                    field.phrase_search(terms)
                 } else {
                     Vec::new()
                 }

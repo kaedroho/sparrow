@@ -39,10 +39,10 @@ fn main() {
         }
     }
 
-    let query = Query::Filter(
-        Box::new(Query::Term(all_text_field, db.term_dictionary.get_or_insert("pam"))),
-        Box::new(Query::Term(title_field, db.term_dictionary.get_or_insert("nffs"))),
-    );
+    let query = Query::And(vec![
+        Query::Phrase(title_field, vec![db.term_dictionary.get_or_insert("foo"), db.term_dictionary.get_or_insert("data")]),
+        Query::Phrase(title_field, vec![db.term_dictionary.get_or_insert("bar"), db.term_dictionary.get_or_insert("data")]),
+    ]);
 
     let mut documents = db.query(&query);
 
