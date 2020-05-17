@@ -1,19 +1,17 @@
 pub mod tsvector;
 pub mod term_dictionary;
+pub mod data_dictionary;
 
 use std::collections::hash_map::HashMap;
 use fnv::FnvHashMap;
 
 use tsvector::TSVector;
-use term_dictionary::TermDictionary;
+use term_dictionary::{TermId, TermDictionary};
+use data_dictionary::{FieldId, DataDictionary};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize)]
 #[serde(transparent)]
 pub struct DocumentId(u32);
-
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize, serde_derive::Deserialize)]
-#[serde(transparent)]
-pub struct TermId(u32);
 
 #[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
 pub struct Token {
@@ -33,11 +31,13 @@ pub struct DocumentSource {
 }
 
 impl DocumentSource {
-    pub fn as_document(&self, term_dict: &mut TermDictionary) -> Document {
-        let mut fields = HashMap::new();
+    pub fn as_document(&self, term_dict: &mut TermDictionary, data_dict: &DataDictionary) -> Document {
+        let mut fields = FnvHashMap::default();
 
         for (field, tokens) in &self.fields {
-            fields.insert(field.to_owned(), TSVector::from_tokens(tokens, term_dict));
+            if let Some(field_id) = data_dict.field_names.get(field) {
+                fields.insert(*field_id, TSVector::from_tokens(tokens, term_dict));
+            }
         }
 
         Document { fields }
@@ -46,7 +46,7 @@ impl DocumentSource {
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    pub fields: HashMap<String, TSVector>,
+    pub fields: FnvHashMap<FieldId, TSVector>,
 }
 
 #[derive(Debug, Default)]
@@ -87,19 +87,20 @@ impl InvertedIndex {
 #[derive(Debug, Default)]
 pub struct Database {
     next_document_id: u32,
-    pub dictionary: TermDictionary,
-    pub fields: HashMap<String, InvertedIndex>,
-    pub docs: HashMap<DocumentId, Document>,
+    pub term_dictionary: TermDictionary,
+    pub data_dictionary: DataDictionary,
+    pub fields: FnvHashMap<FieldId, InvertedIndex>,
+    pub docs: FnvHashMap<DocumentId, Document>,
 }
 
 impl Database {
     pub fn insert_document(&mut self, source: DocumentSource) -> DocumentId {
-        let doc = source.as_document(&mut self.dictionary);
+        let doc = source.as_document(&mut self.term_dictionary, &self.data_dictionary);
 
         let id = DocumentId(self.next_document_id);
         self.next_document_id += 1;
-        for (field_name, tsvector) in &doc.fields {
-            let field = self.fields.entry(field_name.to_owned()).or_default();
+        for (field_id, tsvector) in &doc.fields {
+            let field = self.fields.entry(*field_id).or_default();
             field.insert_tsvector(id, tsvector);
         }
         self.docs.insert(id, doc);

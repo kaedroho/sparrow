@@ -3,7 +3,8 @@ use std::io::{self, BufRead};
 use std::path::Path;
 use std::collections::HashMap;
 
-use sparrow::{Database, DocumentSource, Token};
+use sparrow::{Database, Token, DocumentSource};
+use sparrow::data_dictionary::FieldConfig;
 
 #[derive(Debug, serde_derive::Deserialize)]
 struct Document {
@@ -13,6 +14,9 @@ struct Document {
 
 fn main() {
     let mut db = Database::default();
+    let title_field = db.data_dictionary.insert("title".to_owned(), FieldConfig::default());
+    db.data_dictionary.insert("summary".to_owned(), FieldConfig::default());
+
     let mut sources = HashMap::new();
 
     if let Ok(lines) = read_lines("./test.json") {
@@ -34,7 +38,7 @@ fn main() {
         }
     }
 
-    let mut documents = db.fields.get("title").unwrap().search(db.dictionary.get_or_insert("test"));
+    let mut documents = db.fields.get(&title_field).unwrap().search(db.term_dictionary.get_or_insert("test"));
 
     documents.sort_by(|a,b| a.1.partial_cmp(&b.1).unwrap().reverse());
 

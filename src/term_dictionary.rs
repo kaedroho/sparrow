@@ -1,7 +1,9 @@
 use std::collections::hash_map::HashMap;
 use fnv::FnvHashMap;
 
-use super::TermId;
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize, serde_derive::Deserialize)]
+#[serde(transparent)]
+pub struct TermId(u32);
 
 #[derive(Debug, Default, serde_derive::Serialize)]
 pub struct TermDictionary {
