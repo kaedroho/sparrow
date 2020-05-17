@@ -15,7 +15,7 @@ struct Document {
 fn main() {
     let mut db = Database::default();
     let all_text_field = db.data_dictionary.insert("all_text".to_owned(), FieldConfig::default());
-    db.data_dictionary.insert("title".to_owned(), FieldConfig::default().boost(2.0).copy_to(all_text_field));
+    let title_field = db.data_dictionary.insert("title".to_owned(), FieldConfig::default().boost(2.0).copy_to(all_text_field));
     db.data_dictionary.insert("summary".to_owned(), FieldConfig::default().copy_to(all_text_field));
 
     let mut sources = HashMap::new();
@@ -39,7 +39,10 @@ fn main() {
         }
     }
 
-    let query = Query::Term(all_text_field, db.term_dictionary.get_or_insert("nffs"));
+    let query = Query::And(vec![
+        Query::Term(title_field, db.term_dictionary.get_or_insert("karl")),
+        Query::Term(title_field, db.term_dictionary.get_or_insert("hobley")),
+    ]);
 
     let mut documents = db.query(&query);
 

@@ -104,8 +104,8 @@ impl InvertedIndex {
 pub enum Query {
     Term(FieldId, TermId),
     //Phrase(FieldId, Vec<TermId>),
-    //Or(Vec<Query>),
-    //And(Vec<Query>),
+    Or(Vec<Query>),
+    And(Vec<Query>),
     //Filter(Box<Query>, Box<Query>),
 }
 
@@ -140,6 +140,36 @@ impl Database {
                 } else {
                     Vec::new()
                 }
+            }
+            Query::Or(queries) => {
+                let mut results: FnvHashMap<DocumentId, f32> = FnvHashMap::default();
+
+                for query in queries {
+                    for (document_id, score) in self.query(&query) {
+                        *results.entry(document_id).or_default() += score;
+                    }
+                }
+
+                results.into_iter().collect()
+            }
+            Query::And(queries) => {
+                #[derive(Default)]
+                struct Result {
+                    score: f32,
+                    query_count: usize,
+                }
+
+                let mut results: FnvHashMap<DocumentId, Result> = FnvHashMap::default();
+
+                for query in queries {
+                    for (document_id, score) in self.query(&query) {
+                        let result = results.entry(document_id).or_default();
+                        result.score += score;
+                        result.query_count += 1;
+                    }
+                }
+
+                results.into_iter().filter(|(_, result)| result.query_count == queries.len()).map(|(document_id, result)| (document_id, result.score)).collect()
             }
         }
     }
