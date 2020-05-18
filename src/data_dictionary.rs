@@ -5,6 +5,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 #[serde(transparent)]
 pub struct FieldId(pub u32);
 
+// TODO: Field types
 #[derive(Debug, Clone, serde_derive::Serialize)]
 pub struct FieldConfig {
     pub boost: f32,
@@ -34,7 +35,7 @@ impl Default for FieldConfig {
     }
 }
 
-#[derive(Debug, Default, serde_derive::Serialize)]
+#[derive(Debug, Default, Clone, serde_derive::Serialize)]
 pub struct DataDictionary {
     next_field_id: u32,
     pub field_names: HashMap<String, FieldId>,

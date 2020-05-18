@@ -1,8 +1,7 @@
 use std::ops::Add;
 use fnv::FnvHashMap;
 
-use super::{TermId, Token};
-use super::term_dictionary::TermDictionary;
+use super::TermId;
 
 #[derive(Debug, Clone)]
 pub struct TSVectorTerm {
@@ -26,19 +25,6 @@ pub struct TSVector {
 }
 
 impl TSVector {
-    pub fn from_tokens(tokens: &Vec<Token>, dict: &mut TermDictionary) -> TSVector {
-        let mut terms: FnvHashMap<TermId, TSVectorTerm> = FnvHashMap::default();
-
-        for token in tokens {
-            let term = dict.get_or_insert(&token.term);
-            let term_entry = terms.entry(term).or_default();
-            term_entry.positions.push(token.position);
-            term_entry.weight += 1.0;
-        }
-
-        TSVector { terms, length: tokens.len() }
-    }
-
     pub fn boost(&mut self, boost: f32) {
         for term in self.terms.values_mut() {
             term.weight *= boost;

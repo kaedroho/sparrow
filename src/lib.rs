@@ -3,7 +3,7 @@ pub mod term_dictionary;
 pub mod data_dictionary;
 pub mod query;
 
-use std::collections::hash_map::HashMap;
+use std::collections::HashMap;
 use std::iter::FromIterator;
 use fnv::{FnvHashMap, FnvHashSet};
 
@@ -15,53 +15,6 @@ use query::Query;
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize)]
 #[serde(transparent)]
 pub struct DocumentId(pub u32);
-
-#[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
-pub struct Token {
-    pub term: String,
-    pub position: usize,
-}
-
-#[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
-pub struct DocumentSource {
-    pub fields: HashMap<String, Vec<Token>>,
-}
-
-impl DocumentSource {
-    pub fn as_document(&self, term_dict: &mut TermDictionary, data_dict: &DataDictionary) -> Document {
-        let mut fields = FnvHashMap::default();
-        let mut copy_fields = FnvHashMap::default();
-
-        for (field, tokens) in &self.fields {
-            if let Some((field_id, field_config)) = data_dict.get_by_name(field) {
-                let mut tsvector = TSVector::from_tokens(tokens, term_dict);
-                // Apply field boost and document length normalisation
-                // Note: we multiply the weight by the average field length at query time
-                tsvector.boost(field_config.boost / tsvector.length as f32);
-                fields.insert(field_id, tsvector);
-
-                if !field_config.copy_to.is_empty() {
-                    copy_fields.insert(field_id, field_config.copy_to.clone());
-                }
-            }
-        }
-
-        for (source_field, destination_fields) in copy_fields {
-            if let Some(source) = fields.get(&source_field) {
-                // Work around borrow checker
-                // FIXME: Make this faster
-                let source = source.clone();
-
-                for destination_field in destination_fields {
-                    let destination = fields.entry(destination_field).or_default();
-                    destination.append(&source);
-                }
-            }
-        }
-
-        Document { fields }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct Document {
@@ -184,12 +137,12 @@ pub struct Database {
     pub fields: FnvHashMap<FieldId, InvertedIndex>,
     pub docs: FnvHashMap<DocumentId, Document>,
     pub deleted_docs: FnvHashSet<DocumentId>,
+    pub pk_to_id: HashMap<String, DocumentId>,
+    pub id_to_pk: FnvHashMap<DocumentId, String>,
 }
 
 impl Database {
-    pub fn insert_document(&mut self, source: DocumentSource) -> DocumentId {
-        let doc = source.as_document(&mut self.term_dictionary, &self.data_dictionary);
-
+    pub fn insert_document(&mut self, pk: String, doc: Document) -> DocumentId {
         let id = DocumentId(self.next_document_id);
         self.next_document_id += 1;
         for (field_id, tsvector) in &doc.fields {
@@ -197,11 +150,17 @@ impl Database {
             field.insert_tsvector(id, tsvector);
         }
         self.docs.insert(id, doc);
+        // TODO: Check if PK is taken
+        self.pk_to_id.insert(pk.clone(), id);
+        self.id_to_pk.insert(id, pk);
         id
     }
 
     pub fn delete_document(&mut self, document_id: DocumentId) {
         self.deleted_docs.insert(document_id);
+        if let Some(pk) = self.id_to_pk.remove(&document_id) {
+            self.pk_to_id.remove(&pk);
+        }
     }
 
     pub fn simple_match(&self, query: &Query) -> Vec<DocumentId> {
@@ -369,27 +328,5 @@ impl Database {
                 }
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use super::{Database, DocumentSource, Token};
-
-    pub fn tokenize_string(string: &str) -> Vec<Token> {
-        let mut current_position = 0;
-        string.split_whitespace().map(|string| {
-            current_position += 1;
-            Token { term: string.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase(), position: current_position }
-        }).filter(|token| token.term.len() < 100).collect()
-    }
-
-    #[test]
-    fn it_works() {
-        let mut db = Database::default();
-        let mut fields = HashMap::new();
-        fields.insert("title".to_owned(), tokenize_string("hello world this is a test hello"));
-        db.insert_document(DocumentSource { fields });
     }
 }
