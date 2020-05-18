@@ -3,8 +3,9 @@ use std::io::{self, BufRead};
 use std::path::Path;
 use std::collections::HashMap;
 
-use sparrow::{Database, Token, DocumentSource, Query};
+use sparrow::{Database, Token, DocumentSource};
 use sparrow::data_dictionary::FieldConfig;
+use sparrow::query::Query;
 
 #[derive(Debug, serde_derive::Deserialize)]
 struct Document {
@@ -39,9 +40,9 @@ fn main() {
         }
     }
 
-    let query = Query::And(vec![
-        Query::Phrase(title_field, vec![db.term_dictionary.get_or_insert("foo"), db.term_dictionary.get_or_insert("data")]),
-        Query::Phrase(title_field, vec![db.term_dictionary.get_or_insert("bar"), db.term_dictionary.get_or_insert("data")]),
+    let query = Query::and(vec![
+        Query::phrase(title_field, vec![db.term_dictionary.get_or_insert("foo"), db.term_dictionary.get_or_insert("data")]),
+        Query::phrase(title_field, vec![db.term_dictionary.get_or_insert("bar"), db.term_dictionary.get_or_insert("data")]),
     ]);
 
     let mut documents = db.query(&query);

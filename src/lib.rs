@@ -1,6 +1,7 @@
 pub mod tsvector;
 pub mod term_dictionary;
 pub mod data_dictionary;
+pub mod query;
 
 use std::collections::hash_map::HashMap;
 use std::iter::FromIterator;
@@ -9,6 +10,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 use tsvector::TSVector;
 use term_dictionary::{TermId, TermDictionary};
 use data_dictionary::{FieldId, DataDictionary};
+use query::Query;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize)]
 #[serde(transparent)]
@@ -172,18 +174,6 @@ impl InvertedIndex {
 
         results.into_iter().map(|(document_id, (_, score))| (document_id, score)).collect()
     }
-}
-
-#[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
-pub enum Query {
-    MatchAll,
-    MatchNone,
-    Term(FieldId, TermId),
-    Phrase(FieldId, Vec<TermId>),
-    Or(Vec<Query>),
-    And(Vec<Query>),
-    Filter(Box<Query>, Box<Query>),
-    Boost(Box<Query>, f32),
 }
 
 #[derive(Debug, Default)]
