@@ -10,6 +10,7 @@ pub enum Query {
     Or(Vec<Query>),
     And(Vec<Query>),
     Filter(Box<Query>, Box<Query>),
+    Exclude(Box<Query>, Box<Query>),
     Boost(Box<Query>, f32),
 }
 
@@ -38,8 +39,16 @@ impl Query {
         Query::And(queries)
     }
 
+    pub fn not(query: Query) -> Query {
+        Query::exclude(Query::match_all(), query)
+    }
+
     pub fn filter(query: Query, filter: Query) -> Query {
         Query::Filter(Box::new(query), Box::new(filter))
+    }
+
+    pub fn exclude(query: Query, filter: Query) -> Query {
+        Query::Exclude(Box::new(query), Box::new(filter))
     }
 
     pub fn boost(query: Query, boost: f32) -> Query {

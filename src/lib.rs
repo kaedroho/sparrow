@@ -250,7 +250,12 @@ impl Database {
                 results.into_iter().filter(|(_, result)| *result == queries.len()).map(|(document_id, _)| document_id).collect()
             }
             Query::Filter(query, filter) => {
-                self.simple_match(&Query::And(vec![*query.clone(), *filter.clone()]))
+                let filter_results = self.simple_match(&filter).into_iter().collect::<FnvHashSet<DocumentId>>();
+                self.simple_match(&query).into_iter().filter(|document_id| filter_results.contains(document_id)).collect()
+            }
+            Query::Exclude(query, filter) => {
+                let filter_results = self.simple_match(&filter).into_iter().collect::<FnvHashSet<DocumentId>>();
+                self.simple_match(&query).into_iter().filter(|document_id| !filter_results.contains(document_id)).collect()
             }
             Query::Boost(query, _boost) => {
                 self.simple_match(&query)
@@ -332,6 +337,29 @@ impl Database {
                 }
 
                 results.into_iter().filter(|(_, result)| result.passed_filter).map(|(document_id, result)| (document_id, result.score)).collect()
+            }
+            Query::Exclude(query, filter) => {
+                #[derive(Default)]
+                struct Result {
+                    score: f32,
+                    passed_filter: bool,
+                }
+
+                let mut results: FnvHashMap<DocumentId, Result> = FnvHashMap::default();
+
+                for (document_id, score) in self.query(&query) {
+                    let result = results.entry(document_id).or_default();
+                    result.score += score;
+                }
+
+
+                for document_id in self.simple_match(&filter) {
+                    if let Some(result) = results.get_mut(&document_id) {
+                        result.passed_filter = true;
+                    }
+                }
+
+                results.into_iter().filter(|(_, result)| !result.passed_filter).map(|(document_id, result)| (document_id, result.score)).collect()
             }
             Query::Boost(query, boost) => {
                 if *boost == 0.0 {
