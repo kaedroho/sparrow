@@ -74,10 +74,10 @@ pub struct InvertedIndex {
 }
 
 impl InvertedIndex {
-    pub fn insert_tsvector(&mut self, document: DocumentId, tsvector: &TSVector) {
+    pub fn insert_tsvector(&mut self, document_id: DocumentId, tsvector: &TSVector) {
         for (term, term_info) in &tsvector.terms {
             let postings_list = self.postings.entry(*term).or_default();
-            postings_list.push((document, FnvHashSet::from_iter(term_info.positions.iter().cloned()), term_info.weight));
+            postings_list.push((document_id, FnvHashSet::from_iter(term_info.positions.iter().cloned()), term_info.weight));
         }
 
         self.total_documents += 1;
@@ -191,6 +191,7 @@ pub struct Database {
     pub data_dictionary: DataDictionary,
     pub fields: FnvHashMap<FieldId, InvertedIndex>,
     pub docs: FnvHashMap<DocumentId, Document>,
+    pub deleted_docs: FnvHashSet<DocumentId>,
 }
 
 impl Database {
@@ -207,18 +208,22 @@ impl Database {
         id
     }
 
+    pub fn delete_document(&mut self, document_id: DocumentId) {
+        self.deleted_docs.insert(document_id);
+    }
+
     pub fn simple_match(&self, query: &Query) -> Vec<DocumentId> {
         match query {
             Query::Term(field_id, term_id) => {
                 if let Some(field) = self.fields.get(field_id) {
-                    field.docs_with_term(*term_id)
+                    field.docs_with_term(*term_id).into_iter().filter(|document_id| !self.deleted_docs.contains(document_id)).collect()
                 } else {
                     Vec::new()
                 }
             }
             Query::Phrase(field_id, terms) => {
                 if let Some(field) = self.fields.get(field_id) {
-                    field.docs_with_phrase(terms)
+                    field.docs_with_phrase(terms).into_iter().filter(|document_id| !self.deleted_docs.contains(document_id)).collect()
                 } else {
                     Vec::new()
                 }
@@ -259,14 +264,14 @@ impl Database {
         match query {
             Query::Term(field_id, term_id) => {
                 if let Some(field) = self.fields.get(field_id) {
-                    field.search(*term_id)
+                    field.search(*term_id).into_iter().filter(|(document_id, _)| !self.deleted_docs.contains(document_id)).collect()
                 } else {
                     Vec::new()
                 }
             }
             Query::Phrase(field_id, terms) => {
                 if let Some(field) = self.fields.get(field_id) {
-                    field.phrase_search(terms)
+                    field.phrase_search(terms).into_iter().filter(|(document_id, _)| !self.deleted_docs.contains(document_id)).collect()
                 } else {
                     Vec::new()
                 }
