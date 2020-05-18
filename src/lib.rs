@@ -176,6 +176,8 @@ impl InvertedIndex {
 
 #[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
 pub enum Query {
+    MatchAll,
+    MatchNone,
     Term(FieldId, TermId),
     Phrase(FieldId, Vec<TermId>),
     Or(Vec<Query>),
@@ -214,6 +216,12 @@ impl Database {
 
     pub fn simple_match(&self, query: &Query) -> Vec<DocumentId> {
         match query {
+            Query::MatchAll => {
+                (0..self.next_document_id as u32).map(|i| DocumentId(i as u32)).filter(|document_id| !self.deleted_docs.contains(document_id)).collect()
+            }
+            Query::MatchNone => {
+                Vec::new()
+            }
             Query::Term(field_id, term_id) => {
                 if let Some(field) = self.fields.get(field_id) {
                     field.docs_with_term(*term_id).into_iter().filter(|document_id| !self.deleted_docs.contains(document_id)).collect()
@@ -262,6 +270,12 @@ impl Database {
 
     pub fn query(&self, query: &Query) -> Vec<(DocumentId, f32)> {
         match query {
+            Query::MatchAll => {
+                (0..self.next_document_id).map(|i| DocumentId(i as u32)).filter(|document_id| !self.deleted_docs.contains(document_id)).map(|document_id| (document_id, 0.0)).collect()
+            }
+            Query::MatchNone => {
+                Vec::new()
+            }
             Query::Term(field_id, term_id) => {
                 if let Some(field) = self.fields.get(field_id) {
                     field.search(*term_id).into_iter().filter(|(document_id, _)| !self.deleted_docs.contains(document_id)).collect()
