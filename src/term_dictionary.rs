@@ -3,7 +3,7 @@ use fnv::FnvHashMap;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize, serde_derive::Deserialize)]
 #[serde(transparent)]
-pub struct TermId(u32);
+pub struct TermId(pub u32);
 
 #[derive(Debug, Default, serde_derive::Serialize)]
 pub struct TermDictionary {

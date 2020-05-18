@@ -3,7 +3,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize, serde_derive::Deserialize)]
 #[serde(transparent)]
-pub struct FieldId(u32);
+pub struct FieldId(pub u32);
 
 #[derive(Debug, Clone, serde_derive::Serialize)]
 pub struct FieldConfig {

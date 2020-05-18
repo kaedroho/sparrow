@@ -14,7 +14,7 @@ use query::Query;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, serde_derive::Serialize)]
 #[serde(transparent)]
-pub struct DocumentId(u32);
+pub struct DocumentId(pub u32);
 
 #[derive(Debug, Clone, serde_derive::Serialize, serde_derive::Deserialize)]
 pub struct Token {
